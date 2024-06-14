@@ -1,0 +1,2 @@
+Warning: An output database lock file /work/pi_marianna_maiaru_uml_edu/michael_olaya/benchmarking/damage_no_cure/work/rimr_carbon_2fib_vf_0p55_RI_fbc_16cpu_22.lck has been detected. This may indicate that the output database is opened for writing by another application.
+/work/pi_marianna_maiaru_uml_edu/michael_olaya/benchmarking/damage_no_cure/work/rimr_carbon_2fib_vf_0p55_RI_fbc_16cpu_22.odb will be opened read-only. 

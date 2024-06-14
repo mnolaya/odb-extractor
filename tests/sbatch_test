@@ -1,0 +1,12 @@
+#!/bin/bash
+
+#SBATCH -p cpu
+#SBATCH -c 4
+#SBATCH -t 00:30:00
+#SBATCH --output ./slurm_out/odbex/%A_%a.out
+#SBATCH --error ./slurm_out/odbex/%A_%a.err
+
+module load $CONDA
+conda activate prm
+
+python -m odbex /work/pi_marianna_maiaru_uml_edu/michael_olaya/benchmarking/damage_no_cure/work/rimr_carbon_2fib_vf_0p55_RI_fbc_16cpu_22.odb odbex_cfg.json
