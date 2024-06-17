@@ -1,19 +1,26 @@
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import argparse
-import odbex as oex
+
+from abqpy import extractor, _json
 
 def _argparse():
-    # type: () -> argparse.ArgumentParser
-    parser = argparse.ArgumentParser(prog="odbex")
-    parser.add_argument("config", nargs="?", default=None, help="Path to .json file containing extraction configuration.")
+    # type: () -> argparse.Namespace
+    parser = argparse.ArgumentParser()
+    parser.add_argument('odb', default=None)
+    parser.add_argument('cfg', default=None)
     return parser.parse_args()
     
 def main():
     # type: () -> None
     args = _argparse()
-    if args.config is None:
-        print("\nError! You must provide an odb extraction configuration file in .json file format. To get a sample config.json, run: abaqus python -m odbex.scripts.get_sample_config.\n")
-        return
-    oex.scripts.extract_odb_field_data.main(args)
+
+    # Load configuration settings for the extraction
+    odbex_cfg = _json.load_json_py2(args.cfg)
+
+    # Call extractor
+    extractor.extract(args.odb, odbex_cfg)
     
 if __name__ == "__main__":
     main()

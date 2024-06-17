@@ -1,23 +1,13 @@
 import os
-import argparse
 import json
-
-from odbex.abqpy._json import load_json_py2
 
 import numpy as np
 
 from odbAccess import openOdb
-import abaqusConstants as abqconst
-from symbol import eval_input
+
+import abqpy
 
 TEST_OUT = 'test_odb_py2_output.json'
-
-def _argparse():
-    # type: () -> argparse.Namespace
-    parser = argparse.ArgumentParser()
-    parser.add_argument('odb', default=None)
-    parser.add_argument('cfg', default=None)
-    return parser.parse_args()
 
 def slice_frames_evenly(frames, num_frames=None):
     # type: (int, int | None) -> list[OdbFrame]
@@ -55,18 +45,12 @@ def get_extraction_regions(odb, extraction_defintions):
             exit() 
     return regions
 
-def extract():
-    # type: () -> None
-
-    # Parse command line argumnets
-    args = _argparse()
-
-    # Load configuration settings for the extraction
-    odbex_cfg = load_json_py2(args.cfg)
+def extract(odb_filepath, odbex_cfg):
+    # type: (str, str) -> None
 
     # Open the odb
-    odb = openOdb(args.odb)
-    print('extracting requested field data from {}'.format(args.odb))
+    odb = openOdb(odb_filepath)
+    print('extracting requested field data from {}'.format(odb_filepath))
 
     # Get the regions data is to be extracted on
     extraction_regions = get_extraction_regions(odb, odbex_cfg['extract'])
@@ -125,12 +109,8 @@ def extract():
         odb_data.update({step_name: step_data})
 
     # Write raw output data to file
-    output_filename = '_'.join(['extracted', os.path.splitext(os.path.basename(args.odb))[0]]) + '.json'
+    output_filename = '_'.join(['extracted', os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
     output_filepath = os.path.join(odbex_cfg['export'], 'raw_odbex', output_filename)
     with open(output_filepath, 'w+') as f:
         json.dump(odb_data, f, indent=4)
-        print('requested field data from {} successfully written to file: {}'.format(args.odb, output_filepath))
-
-if __name__ == '__main__':
-    extract()
-    # print(sys.argv)
+        print('requested field data from {} successfully written to file: {}'.format(odb_filepath, output_filepath))

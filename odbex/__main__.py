@@ -6,7 +6,7 @@ import signal
 import json
 
 PARENT = pathlib.Path(__file__).parent
-EXTRACTOR = PARENT.joinpath('abqpy/_extract.py')
+EXTRACTOR = PARENT.joinpath('abqpy/__main__.py')
 
 def _argparse() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="odbex")
