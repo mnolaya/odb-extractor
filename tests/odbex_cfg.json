@@ -7,27 +7,14 @@
         "C:/some/dir/analysis.odb"
     ],
     "odb_root": "C:/some/dir",
-    "field_requests": [
+    "extract": [
         {
-            "region_type": "instance",
-            "region_name": "POROUS-MICROSTRUCTURE-1",
-            "region_subsets": [
-                {
-                    "mesh_type": "element",
-                    "mesh_ids": ["SET-POROUS-MICROSTRUCTURE"],
-                    "fields": ["S", "E", "SDV2", "TEMP"]
-                },
-                {
-                    "mesh_type": "element",
-                    "mesh_ids": ["SET-CUT-MATRIX"],
-                    "fields": ["SDV1"]
-                }
-            ]
+            "instance": "COMPOSITE-1",
+            "type": "element",
+            "id": "SET-ALLELEMENTS",
+            "fields": ["S", "E", "IVOL"]
         }
     ],
-    "slice_frames_by": 10,
-    "export": {
-        "prefix": "extracted",
-        "directory": ""
-    }    
+    "nframes": 5,
+    "export": "."
 }

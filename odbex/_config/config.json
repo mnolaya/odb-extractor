@@ -1,9 +1,11 @@
 {
     "file_explorer": {
-        "enable": true,
-        "starting_directory": "C:/some/dir"
+        "enable": false,
+        "starting_directory": "."
     },
-    "odb_filepaths": ["C:/some/dir/analysis.odb"],
+    "odb_filepaths": [
+        "C:/some/dir/analysis.odb"
+    ],
     "odb_root": "C:/some/dir",
     "field_requests": [
         {
