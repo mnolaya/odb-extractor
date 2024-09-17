@@ -4,6 +4,7 @@ import json
 import numpy as np
 
 from odbAccess import openOdb
+import abaqusConstants as abqconst
 
 import abqpy
 
@@ -30,87 +31,218 @@ def get_instance_node_set(instance, name):
     # type: (OdbInstance, str) -> OdbSet
     return instance.nodeSets[name]
 
-def get_extraction_regions(odb, extraction_defintions):
-    regions = []
+def _make_number_slice(numbers):
+    # type: (list) -> np.ndarray:
+    '''
+    Convert a list of element/node numbers into an array for slicing.
+    If the list contains a string, the strings can be of a single integer (e.g., "1") or
+    a range of integers in the form "START-STOP" (e.g., "1-10").
+    '''
+    nums = []
+    for n in numbers:
+        if type(n) == int: nums.append(n - 1)  # Subtract 1 to get correct index
+        if type(n) == str:
+            if '-' in n:  # Range of values
+                start, stop = n.split('-')
+                nums += np.arange(int(start) - 1, int(stop)).tolist()
+            else: nums.append(int(n) - 1)  # Convert string to int and subtract 1 to get correct index
+    return np.unique(nums)
+
+def get_instance_elements_by_number(instance, numbers):
+    # type: (OdbInstance, list) -> list[OdbMeshElement]
+    '''
+    Get an array of elements on the instance.
+    The list of element numbers can be integers or strings.
+    If the list contains a string, the strings can be of a single integer (e.g., "1") or
+    a range of integers in the form "START-STOP" (e.g., "1-10").
+    '''
+    return np.array(instance.elements)[_make_number_slice(numbers)]
+
+def get_instance_nodes_by_number(instance, numbers):
+    # type: (OdbInstance, list) -> list[OdbMeshNode]
+    '''
+    Get an array of nodes on the instance.
+    The list of node numbers can be integers or strings.
+    If the list contains a string, the strings can be of a single integer (e.g., "1") or
+    a range of integers in the form "START-STOP" (e.g., "1-10").
+    '''
+    return np.array(instance.nodes)[_make_number_slice(numbers)]
+
+def build_extraction_region_dict(odb, extraction_defintions):
+    _region_getters = {
+        'element': {
+            'set': get_instance_element_set,
+            'number': get_instance_elements_by_number,
+        },
+        'node': {
+            'set': get_instance_node_set,
+            'number': get_instance_nodes_by_number,
+        },
+    }
+    _mesh_number_prefix = {'element': 'E', 'node': 'N'}
+    
+    regions = {}
     for ed in extraction_defintions:
+        rmesh, rtype, rid, fields = ed['mesh'].lower(), ed['type'].lower(), ed['id'], ed['fields']
         instance = odb.rootAssembly.instances[ed['instance']]
-        if ed['type'].lower() == 'element':
-            regions.append(get_instance_element_set(instance, ed['id']))
-        elif ed['type'].lower() == 'node':
-            regions.append(get_instance_node_set(instance, ed['id']))
-        else:
-            print('incorrect region type chosen: {}'.format(ed['type']))
-            print('please select either "element" or "node"')
+        try:
+            rg = _region_getters[rmesh][rtype]
+        except KeyError:
+            print('incorrect value entry for region "type" ({}) or "get" ({})'.format(ed['type'], ed['get']))
+            print('valid type values: node, element')
+            print('valid get values: set, number')
             print('terminating...')
-            exit() 
+            exit()
+        region = rg(instance, rid)
+        if rtype == 'set':
+            regions.update({rid: {'region': region, 'fields': fields}})
+        else:
+            pfx = _mesh_number_prefix[rmesh]
+            regions.update({'{}{}'.format(pfx, mesh_item.label): {'region': mesh_item, 'fields': fields} for mesh_item in region})
     return regions
 
+def get_field_data(field_name, frame, region):
+    # type: (str, odb.Frame, odb.Region) -> tuple[np.ndarray, list[str]]
+
+    # Get all field output for current field and frame
+    field_output = frame.fieldOutputs[field_name]
+
+    # Get component labels for the field
+    components = list(field_output.componentLabels)
+    if not components: components = [field_name]
+
+    # Use the bulkDataBlocks method to retrieve all field output data for the region
+    bdbs = field_output.getSubset(region=region).bulkDataBlocks
+
+    # Stack data into numpy array
+    data = np.vstack(bdb.data for bdb in bdbs)
+
+    # Get max. principal if stress or strain requested
+    if field_name in ['S', 'E']:
+        bdbs = field_output.getSubset(region=region).getScalarField(invariant=abqconst.MAX_PRINCIPAL).bulkDataBlocks
+        data = np.hstack([data, np.vstack(bdb.data for bdb in bdbs)])
+        components += ("{}MAXPRINC".format(field_name), )
+    return data, components
+
+# def vol_average_field_data(field_data, ipvols):
+#     # type: (np.ndarray, np.ndarray) -> np.ndarray
+#     return np.sum(field_data*ipvols, axis=0)/np.sum(ipvols)
+
+def average_field_data(field_data, ivols=None):
+    # type: (np.ndarray, np.ndarray | None) -> np.ndarray
+    if ivols is None:
+        return np.mean(field_data, axis=0)    
+    else:
+        return np.sum(field_data*ivols, axis=0)/np.sum(ivols)
+    
+def update_field_dict(field_dict, data, components):
+    # type: (dict, np.ndarray, list[str]) -> None
+    field_dict['data'].append(data.tolist())
+    if 'components' not in field_dict.keys(): field_dict.update({'components': components})
+
 def extract(odb_filepath, odbex_cfg):
-    # type: (str, str) -> None
+    # type: (str, dict) -> None
 
     # Open the odb
     odb = openOdb(odb_filepath)
     print('extracting requested field data from {}'.format(odb_filepath))
 
     # Get the regions data is to be extracted on
-    extraction_regions = get_extraction_regions(odb, odbex_cfg['extract'])
+    extraction_regions = build_extraction_region_dict(odb, odbex_cfg['extract'])
 
     # Extract data from odb into a dictionary
-    odb_data = {}
+    extracted_odb_data = {}
+
     for step_name, step in odb.steps.items():
         # Get evenly spaced slice of frames
         frames = slice_frames_evenly(step.frames, num_frames=odbex_cfg['nframes'])
 
         # Initialize dictionaries to store extracted data in
-        field_data_dicts = {ed['id']: {f: {'data': []} for f in ed['fields']}for ed in odbex_cfg['extract']}
+        field_data_dicts = {k: {f: {'data': []} for f in v['fields']} for k, v in extraction_regions.items()}
 
         # Create a dictionary to store the step data
         step_data = {'increments': {f.frameId: f.frameValue for f in frames}, 'field_data': field_data_dicts}
 
         # Extract data for each frame 
         for i, frame in enumerate(frames):
-            print('extracting data on increment frame {} of {}'.format(i+1, len(frames)))
-            for region, ed in zip(extraction_regions, odbex_cfg['extract']):
-                for field_name in ed['fields']:
-                    # Get all field output for current field and frame
-                    field_output = frame.fieldOutputs[field_name]
+            print('extracting data for increment {} (frame {} of {})'.format(frame.frameId, i+1, len(frames)))
+            # for region, ed in zip(extraction_regions, odbex_cfg['extract']):
+            for rid, fdd in field_data_dicts.items():
+                # Set the region for field data extraction
+                region = extraction_regions[rid]['region']
 
-                    # Get the field data dictionary to be updated with extracted data for this field, frame
-                    field_dict = field_data_dicts[ed['id']][field_name]
+                # Get integration point volumes first for volume-averaging quantities
+                ivols = None
+                if 'IVOL' in fdd.keys(): 
+                    ivols, components = get_field_data('IVOL', frame, region)
+                    update_field_dict(fdd['IVOL'], ivols, components)
+                    # field_data_dicts[ed['id']]['IVOL']['data'].append(ivols)
+                
+                # Loop through field data labels and get bulk data, then average for the region
+                for field_name, field_dict in fdd.items():
+                    if field_name == 'IVOL': continue
 
-                    # Add component labels to the dict if not already present
-                    if 'components' not in field_dict.keys():
-                        components = list(field_output.componentLabels)
-                        if not components: components = [field_name]
-                        field_dict.update({'components': components})
+                    # Get field data and average/volume average as appropriate
+                    fd, components = get_field_data(field_name, frame, region)
+                    # print(fd)
+                    fd = average_field_data(fd, ivols)
 
-                    # Use the bulkDataBlocks method to retrieve all field output data for the region
-                    bdbs = field_output.getSubset(region=region).bulkDataBlocks
-                    if not bdbs: continue
-
-                    # Stack data into a single array and convert to list for future json serialization
-                    data = np.vstack(bdb.data for bdb in bdbs).tolist()
-
-                    # Get element and integration point numbering if not already present and element region type
-                    if ed['type'].lower() == 'element' and 'ips' not in field_data_dicts[ed['id']].keys():
-                        elems = np.hstack(bdb.elementLabels for bdb in bdbs).tolist()
-                        ips = np.hstack(bdb.integrationPoints for bdb in bdbs).tolist()
-                        field_data_dicts[ed['id']].update({'ips': ips, 'elems': elems})
-
-                    # Get node numbering if not already present and node region type
-                    if ed['type'].lower() == 'node' and 'nodes' not in field_data_dicts[ed['id']].keys():
-                        nodes = np.hstack(bdb.nodeLabels for bdb in bdbs).tolist()
-                        field_data_dicts[ed['id']].update({'nodes': nodes})
-                    
-                    # Append the field data for this frame to the field data dictionary
-                    field_dict['data'].append(data)
+                    # Update the field dict
+                    update_field_dict(field_dict, fd, components)
 
         # Update the odb data dictionary with the data for the current step
-        odb_data.update({step_name: step_data})
+        extracted_odb_data.update({step_name: step_data})
 
     # Write raw output data to file
     output_filename = '_'.join(['extracted', os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
-    output_filepath = os.path.join(odbex_cfg['export'], 'raw_odbex', output_filename)
+    output_dir = os.path.join(odbex_cfg['export'], 'raw_odbex')
+    output_filepath = os.path.join(output_dir, output_filename)
+    if not os.path.exists(output_dir): os.mkdir(output_dir)
     with open(output_filepath, 'w+') as f:
-        json.dump(odb_data, f, indent=4)
+        json.dump(extracted_odb_data, f, indent=4)
         print('requested field data from {} successfully written to file: {}'.format(odb_filepath, output_filepath))
+
+if __name__ == '__main__':
+    TEST_CFG = {
+        "file_explorer": {
+            "enable": True,
+            "starting_directory": "C:/some/dir"
+        },
+        "odb_filepaths": [
+            "C:/some/dir/analysis.odb"
+        ],
+        "odb_root": "C:/some/dir",
+        "extract": [
+            {
+                "instance": "MATRIX-1",
+                "mesh": "element",
+                "type": "set",
+                "id": "SET-ALLELEMENTS",
+                "fields": ["S", "E", "IVOL", "TEMP"]
+            },
+            # {
+            #     "instance": "MATRIX-1",
+            #     "mesh": "element",
+            #     "type": "number",
+            #     "id": [1, 2, 3, "3", "4-9"],
+            #     "fields": ["S", "E", "IVOL", "TEMP"]
+            # },
+            # {
+            #     "instance": "MATRIX-1",
+            #     "type": "element",
+            #     "get": "number",
+            #     "id": 1,
+            #     # "fields": ["S", "E", "IVOL", "TEMP"]
+            # },
+            # {
+            #     "instance": "MICROSTRUCTURE-1",
+            #     "type": "element",
+            #     "id": "SET-MATRIX",
+            #     "fields": ["S", "E", "IVOL", "TEMP", "SDV1", "SDV2", "SDV3", "SDV4", "SDV5", "SDV6", "SDV7"]
+            # }
+        ],
+        "nframes": None,
+        "export": "."
+    }
+    TEST_ODB = '/work/pi_marianna_maiaru_uml_edu/michael_olaya/tests/process_model/damage_during_cure/work/9elem_composite_cure_perm2_4cpu.odb'
+    extract(TEST_ODB, TEST_CFG)
