@@ -84,7 +84,15 @@ def build_extraction_region_dict(odb, extraction_defintions):
     regions = {}
     for ed in extraction_defintions:
         rmesh, rtype, rid, fields = ed['mesh'].lower(), ed['type'].lower(), ed['id'], ed['fields']
-        instance = odb.rootAssembly.instances[ed['instance']]
+        try:
+            instance = odb.rootAssembly.instances[ed['instance']]
+        except KeyError:
+            print('error: instance {} does not exist'.format(ed['instance']))
+            print('the instances on the model which field data can be extracted from are:')
+            for inst in odb.rootAssembly.instances.keys():
+                print('-> {}'.format(inst))
+            print('terminating...')
+            exit()
         try:
             rg = _region_getters[rmesh][rtype]
         except KeyError:
@@ -130,8 +138,10 @@ def get_field_data(field_name, frame, region):
 
 def average_field_data(field_data, ivols=None):
     # type: (np.ndarray, np.ndarray | None) -> np.ndarray
-    if ivols is None:
+    # Non-integration point quantity, or no integration point volumes passed
+    if ivols is None or field_data.shape[0] != ivols.shape[0]:
         return np.mean(field_data, axis=0)    
+    # Volume-average if integration point quantity
     else:
         return np.sum(field_data*ivols, axis=0)/np.sum(ivols)
     
@@ -139,6 +149,45 @@ def update_field_dict(field_dict, data, components):
     # type: (dict, np.ndarray, list[str]) -> None
     field_dict['data'].append(data.tolist())
     if 'components' not in field_dict.keys(): field_dict.update({'components': components})
+
+def extract_step(step, num_frames, extraction_regions):
+    # type: (Odb.Step, int, dict) -> dict
+
+    # Get evenly spaced slice of frames
+    frames = slice_frames_evenly(step.frames, num_frames=num_frames)
+
+    # Initialize dictionaries to store extracted data in
+    field_data_dicts = {k: {f: {'data': []} for f in v['fields']} for k, v in extraction_regions.items()}
+
+    # Create a dictionary to store the step data
+    step_data = {'increments': {f.frameId: f.frameValue for f in frames}, 'field_data': field_data_dicts}
+
+    # Extract data for each frame 
+    for i, frame in enumerate(frames):
+        print('extracting data for increment {} (frame {} of {})'.format(frame.frameId, i+1, len(frames)))
+        # for region, ed in zip(extraction_regions, odbex_cfg['extract']):
+        for rid, fdd in field_data_dicts.items():
+            # Set the region for field data extraction
+            region = extraction_regions[rid]['region']
+
+            # Get integration point volumes first for volume-averaging quantities
+            ivols = None
+            if 'IVOL' in fdd.keys(): 
+                ivols, components = get_field_data('IVOL', frame, region)
+                # update_field_dict(fdd['IVOL'], ivols, components)
+                # field_data_dicts[ed['id']]['IVOL']['data'].append(ivols)
+            
+            # Loop through field data labels and get bulk data, then average for the region
+            for field_name, field_dict in fdd.items():
+                if field_name == 'IVOL': continue
+
+                # Get field data and average/volume average as appropriate
+                fd, components = get_field_data(field_name, frame, region)
+                fd = average_field_data(fd, ivols)
+
+                # Update the field dict
+                update_field_dict(field_dict, fd, components)
+    return step_data
 
 def extract(odb_filepath, odbex_cfg):
     # type: (str, dict) -> None
@@ -154,48 +203,16 @@ def extract(odb_filepath, odbex_cfg):
     extracted_odb_data = {}
 
     for step_name, step in odb.steps.items():
-        # Get evenly spaced slice of frames
-        frames = slice_frames_evenly(step.frames, num_frames=odbex_cfg['nframes'])
-
-        # Initialize dictionaries to store extracted data in
-        field_data_dicts = {k: {f: {'data': []} for f in v['fields']} for k, v in extraction_regions.items()}
-
-        # Create a dictionary to store the step data
-        step_data = {'increments': {f.frameId: f.frameValue for f in frames}, 'field_data': field_data_dicts}
-
-        # Extract data for each frame 
-        for i, frame in enumerate(frames):
-            print('extracting data for increment {} (frame {} of {})'.format(frame.frameId, i+1, len(frames)))
-            # for region, ed in zip(extraction_regions, odbex_cfg['extract']):
-            for rid, fdd in field_data_dicts.items():
-                # Set the region for field data extraction
-                region = extraction_regions[rid]['region']
-
-                # Get integration point volumes first for volume-averaging quantities
-                ivols = None
-                if 'IVOL' in fdd.keys(): 
-                    ivols, components = get_field_data('IVOL', frame, region)
-                    update_field_dict(fdd['IVOL'], ivols, components)
-                    # field_data_dicts[ed['id']]['IVOL']['data'].append(ivols)
-                
-                # Loop through field data labels and get bulk data, then average for the region
-                for field_name, field_dict in fdd.items():
-                    if field_name == 'IVOL': continue
-
-                    # Get field data and average/volume average as appropriate
-                    fd, components = get_field_data(field_name, frame, region)
-                    # print(fd)
-                    fd = average_field_data(fd, ivols)
-
-                    # Update the field dict
-                    update_field_dict(field_dict, fd, components)
+        step_data = extract_step(step, odbex_cfg['nframes'], extraction_regions)
 
         # Update the odb data dictionary with the data for the current step
         extracted_odb_data.update({step_name: step_data})
 
     # Write raw output data to file
-    output_filename = '_'.join(['extracted', os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
-    output_dir = os.path.join(odbex_cfg['export'], 'raw_odbex')
+    prefix = odbex_cfg['export_prefix']
+    if prefix is None: prefix = 'odbex'
+    output_filename = '_'.join([prefix, os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
+    output_dir = os.path.join(os.path.dirname(odb_filepath))
     output_filepath = os.path.join(output_dir, output_filename)
     if not os.path.exists(output_dir): os.mkdir(output_dir)
     with open(output_filepath, 'w+') as f:

@@ -17,11 +17,11 @@ def _argparse() -> argparse.Namespace:
 def main() -> None:
     args = _argparse()
 
-    # Get config and set up extraction data directory
-    with open(args.cfg, 'r') as f:
-        odbex_cfg = json.load(f)
-    data_dir = pathlib.Path(odbex_cfg['export']).joinpath('raw_odbex')
-    if not data_dir.exists(): data_dir.mkdir()
+    # # Get config and set up extraction data directory
+    # with open(args.cfg, 'r') as f:
+    #     odbex_cfg = json.load(f)
+    # data_dir = pathlib.Path(odbex_cfg['export'])
+    # if not data_dir.exists(): data_dir.mkdir()
 
 
     p = subprocess.Popen(['abaqus', 'python', EXTRACTOR.as_posix(), args.odb, args.cfg], preexec_fn=os.setsid)
