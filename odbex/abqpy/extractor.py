@@ -40,12 +40,12 @@ def _make_number_slice(numbers):
     '''
     nums = []
     for n in numbers:
-        if type(n) == int: nums.append(n - 1)  # Subtract 1 to get correct index
+        if type(n) == int: nums.append(n)  # Subtract 1 to get correct index
         if type(n) == str:
             if '-' in n:  # Range of values
                 start, stop = n.split('-')
-                nums += np.arange(int(start) - 1, int(stop)).tolist()
-            else: nums.append(int(n) - 1)  # Convert string to int and subtract 1 to get correct index
+                nums += np.arange(int(start), int(stop) + 1).tolist()
+            else: nums.append(int(n))  # Convert string to int and subtract 1 to get correct index
     return np.unique(nums)
 
 def get_instance_elements_by_number(instance, numbers):
@@ -56,7 +56,12 @@ def get_instance_elements_by_number(instance, numbers):
     If the list contains a string, the strings can be of a single integer (e.g., "1") or
     a range of integers in the form "START-STOP" (e.g., "1-10").
     '''
-    return np.array(instance.elements)[_make_number_slice(numbers)]
+    elems = []
+    for n in _make_number_slice(numbers):
+        elems.append(instance.getElementFromLabel(n))
+    return np.array(elems)
+
+    # return np.array(instance.elements)[_make_number_slice(numbers)]
 
 def get_instance_nodes_by_number(instance, numbers):
     # type: (OdbInstance, list) -> list[OdbMeshNode]
@@ -66,7 +71,10 @@ def get_instance_nodes_by_number(instance, numbers):
     If the list contains a string, the strings can be of a single integer (e.g., "1") or
     a range of integers in the form "START-STOP" (e.g., "1-10").
     '''
-    return np.array(instance.nodes)[_make_number_slice(numbers)]
+    nodes = []
+    for n in _make_number_slice(numbers):
+        nodes.append(instance.getNodeFromLabel(n))
+    return np.array(nodes)
 
 def build_extraction_region_dict(odb, extraction_defintions):
     _region_getters = {
