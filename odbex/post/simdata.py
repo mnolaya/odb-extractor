@@ -10,16 +10,18 @@ class FieldData:
     region: str
     field: str
     data: np.ndarray
+    std: np.ndarray
     components: list[str] | None
 
     @classmethod
     def from_dict(cls, step: str, region: str, field: str, field_data_dict: dict[str, list]):
         data = cls._load_field_data(field_data_dict['data'])
+        std = cls._load_field_data(field_data_dict['std'])
         if 'components' in field_data_dict.keys():
             components = field_data_dict['components']
         else:
             components = None
-        return cls(step, region, field, data, components)
+        return cls(step, region, field, data, std, components)
 
     @staticmethod
     def _load_field_data(field_data: dict) -> np.ndarray:

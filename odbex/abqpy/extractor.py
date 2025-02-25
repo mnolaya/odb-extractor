@@ -145,17 +145,18 @@ def get_field_data(field_name, frame, region):
 #     return np.sum(field_data*ipvols, axis=0)/np.sum(ipvols)
 
 def average_field_data(field_data, ivols=None):
-    # type: (np.ndarray, np.ndarray | None) -> np.ndarray
+    # type: (np.ndarray, np.ndarray | None) -> tuple[np.ndarray]
     # Non-integration point quantity, or no integration point volumes passed
     if ivols is None or field_data.shape[0] != ivols.shape[0]:
-        return np.mean(field_data, axis=0)    
+        return np.mean(field_data, axis=0), np.std(field_data, axis=0)
     # Volume-average if integration point quantity
     else:
-        return np.sum(field_data*ivols, axis=0)/np.sum(ivols)
+        return np.sum(field_data*ivols, axis=0)/np.sum(ivols), np.std(field_data*ivols, axis=0)
     
-def update_field_dict(field_dict, data, components):
+def update_field_dict(field_dict, data_mean, data_std, components):
     # type: (dict, np.ndarray, list[str]) -> None
-    field_dict['data'].append(data.tolist())
+    field_dict['data'].append(data_mean.tolist())
+    field_dict['std'].append(data_std.tolist())
     if 'components' not in field_dict.keys(): field_dict.update({'components': components})
 
 def extract_step(step, num_frames, extraction_regions):
@@ -165,7 +166,7 @@ def extract_step(step, num_frames, extraction_regions):
     frames = slice_frames_evenly(step.frames, num_frames=num_frames)
 
     # Initialize dictionaries to store extracted data in
-    field_data_dicts = {k: {f: {'data': []} for f in v['fields']} for k, v in extraction_regions.items()}
+    field_data_dicts = {k: {f: {'data': [], 'std': []} for f in v['fields']} for k, v in extraction_regions.items()}
 
     # Create a dictionary to store the step data
     step_data = {'increments': {f.frameId: f.frameValue for f in frames}, 'field_data': field_data_dicts}
@@ -191,10 +192,10 @@ def extract_step(step, num_frames, extraction_regions):
 
                 # Get field data and average/volume average as appropriate
                 fd, components = get_field_data(field_name, frame, region)
-                fd = average_field_data(fd, ivols)
+                fd_mean, fd_std = average_field_data(fd, ivols)
 
                 # Update the field dict
-                update_field_dict(field_dict, fd, components)
+                update_field_dict(field_dict, fd_mean, fd_std, components)
     return step_data
 
 def extract(odb_filepath, odbex_cfg):
