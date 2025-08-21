@@ -15,7 +15,7 @@ def _argparse():
 def main():
     # type: () -> None
     args = _argparse()
-
+    
     # Load configuration settings for the extraction
     odbex_cfg = _json.load_json_py2(args.cfg)
 

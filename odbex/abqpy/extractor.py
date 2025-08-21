@@ -10,6 +10,43 @@ import abqpy
 
 TEST_OUT = 'test_odb_py2_output.json'
 
+def extract(odb_filepath, odbex_cfg):
+    # type: (str, dict) -> None
+
+    # Open the odb
+    odb = openOdb(odb_filepath)
+    print('extracting requested field data from {}'.format(odb_filepath))
+
+    # print(odb.rootAssembly.instances.values()[0].nodeSets)
+    # print(odb.rootAssembly.instances.values()[0].elementSets)
+    # exit()
+
+    # Get the regions data is to be extracted on
+    extraction_regions = build_extraction_region_dict(odb, odbex_cfg['extract'])
+    
+
+
+    # Extract data from odb into a dictionary
+    extracted_odb_data = {}
+
+    for step_name, step in odb.steps.items():
+        step_data = extract_step(step, odbex_cfg['nframes'], extraction_regions)
+
+        # Update the odb data dictionary with the data for the current step
+        extracted_odb_data.update({step_name: step_data})
+
+    # Write raw output data to file
+    prefix = odbex_cfg['export_prefix']
+    if prefix is None: prefix = 'odbex'
+    output_filename = '_'.join([prefix, os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
+    output_dir = os.path.join(os.path.dirname(odb_filepath))
+    if output_dir == '': output_dir = '.'
+    output_filepath = os.path.join(output_dir, output_filename)
+    if not os.path.exists(output_dir): os.mkdir(output_dir)
+    with open(output_filepath, 'w+') as f:
+        json.dump(extracted_odb_data, f, indent=4)
+        print('requested field data from {} successfully written to file: {}'.format(odb_filepath, output_filepath))
+
 def slice_frames_evenly(frames, num_frames=None):
     # type: (int, int | None) -> list[OdbFrame]
     
@@ -129,12 +166,15 @@ def get_field_data(field_name, frame, region):
 
     # Use the bulkDataBlocks method to retrieve all field output data for the region
     bdbs = field_output.getSubset(region=region).bulkDataBlocks
-
+    check_node = str(type(region)) == "<type 'OdbMeshNode'>"
+    if field_name in ['S', 'E', 'LE'] and check_node:
+        bdbs = field_output.getSubset(region=region, position=abqconst.ELEMENT_NODAL).bulkDataBlocks
+    
     # Stack data into numpy array
     data = np.vstack(bdb.data for bdb in bdbs)
 
     # Get max. principal if stress or strain requested
-    if field_name in ['S', 'E']:
+    if field_name in ['S', 'E', 'LE'] and not check_node:
         bdbs = field_output.getSubset(region=region).getScalarField(invariant=abqconst.MAX_PRINCIPAL).bulkDataBlocks
         data = np.hstack([data, np.vstack(bdb.data for bdb in bdbs)])
         components += ("{}MAXPRINC".format(field_name), )
@@ -191,42 +231,16 @@ def extract_step(step, num_frames, extraction_regions):
                 if field_name == 'IVOL': continue
 
                 # Get field data and average/volume average as appropriate
-                fd, components = get_field_data(field_name, frame, region)
+                try:
+                    fd, components = get_field_data(field_name, frame, region)
+                except KeyError as e:
+                    print('warning: field {} not available for extraction in current ODB. continuing to next requested field or odb...'.format(field_name))
+                    continue
                 fd_mean, fd_std = average_field_data(fd, ivols)
 
                 # Update the field dict
                 update_field_dict(field_dict, fd_mean, fd_std, components)
     return step_data
-
-def extract(odb_filepath, odbex_cfg):
-    # type: (str, dict) -> None
-
-    # Open the odb
-    odb = openOdb(odb_filepath)
-    print('extracting requested field data from {}'.format(odb_filepath))
-
-    # Get the regions data is to be extracted on
-    extraction_regions = build_extraction_region_dict(odb, odbex_cfg['extract'])
-
-    # Extract data from odb into a dictionary
-    extracted_odb_data = {}
-
-    for step_name, step in odb.steps.items():
-        step_data = extract_step(step, odbex_cfg['nframes'], extraction_regions)
-
-        # Update the odb data dictionary with the data for the current step
-        extracted_odb_data.update({step_name: step_data})
-
-    # Write raw output data to file
-    prefix = odbex_cfg['export_prefix']
-    if prefix is None: prefix = 'odbex'
-    output_filename = '_'.join([prefix, os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
-    output_dir = os.path.join(os.path.dirname(odb_filepath))
-    output_filepath = os.path.join(output_dir, output_filename)
-    if not os.path.exists(output_dir): os.mkdir(output_dir)
-    with open(output_filepath, 'w+') as f:
-        json.dump(extracted_odb_data, f, indent=4)
-        print('requested field data from {} successfully written to file: {}'.format(odb_filepath, output_filepath))
 
 if __name__ == '__main__':
     TEST_CFG = {

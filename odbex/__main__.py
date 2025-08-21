@@ -23,15 +23,16 @@ def main() -> None:
     # data_dir = pathlib.Path(odbex_cfg['export'])
     # if not data_dir.exists(): data_dir.mkdir()
 
-
-    p = subprocess.Popen(['abaqus', 'python', EXTRACTOR.as_posix(), args.odb, args.cfg], preexec_fn=os.setsid)
-    while True:
-        if p.poll() is not None:
-            break
-        try:
-            p.wait()
-        except KeyboardInterrupt:
-            os.killpg(os.getpgid(p.pid), signal.SIGTERM)     
+    p = subprocess.run(['abaqus', 'python', EXTRACTOR.as_posix(), args.odb, args.cfg], check=True, shell=True)
+    # p = subprocess.run(args=['abaqus', 'python', EXTRACTOR.as_posix(), '-h'], check=True, capture_output=True, text=True, shell=True)
+    # p = subprocess.Popen(['abaqus', 'python', EXTRACTOR.as_posix(), args.odb, args.cfg], preexec_fn=os.setsid)
+    # while True:
+    #     if p.poll() is not None:
+    #         break
+    #     try:
+    #         p.wait()
+    #     except KeyboardInterrupt:
+    #         os.killpg(os.getpgid(p.pid), signal.SIGTERM)     
 
 if __name__ == '__main__':
     main()
