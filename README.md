@@ -37,4 +37,4 @@ The extracted data will be output in `.json` file format with the same base name
 
 ## Data exploration
 
-A submodule called `odbex.post` contains functionality to read in this data for further plotting/data exploration. Refer to the brief example notebook for how to use `odbex.post`.
+A submodule called `odbex.post` contains functionality to read in this data for further plotting/data exploration. Refer to the brief [example notebook](./tests/test_results.ipynb) for how to use `odbex.post`.
