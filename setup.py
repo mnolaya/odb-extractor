@@ -4,5 +4,6 @@ setup(
     name="odbex",
     description="Abaqus .odb data extractor",
     verison="3.0.1",
-    packages=find_packages()
+    packages=find_packages(),
+    requires=['numpy', 'orjson', 'attrs']
 )
