@@ -51,6 +51,12 @@ python -m odbex some_folder\*55pct*.odb path_to_config.json
 
 In either case (single or batch mode), the extracted data will be output in `.json` file format with the same base name as the extracted ODB(s) and a prefix defined by the `export_prefix` key in the config file. 
 
+> [!NOTE]
+> Output data is averaged (or volume-averaged, in the case of stress and strain) across the requested region. Standard deviations are provided in the extracted output file.
+
+> [!NOTE]
+> Maximum principal stress/strain are automatically extracted when requesting `S` and `E` fields.
+
 ## Data exploration
 
 A submodule called `odbex.post` contains functionality to read in this data for further plotting/data exploration. Refer to the brief [example notebook](./tests/test_results.ipynb) for how to use `odbex.post`.
