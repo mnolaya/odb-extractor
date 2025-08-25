@@ -1,0 +1,32 @@
+{
+    "extract": [
+        {
+            "instance": "PART-1-1",
+            "mesh": "element",
+            "type": "set",
+            "id": "INTERFACE",
+            "fields": [
+                "S",
+                "E",
+                "STATUS",
+                "SDEG",
+                "TEMP"
+            ]
+        },
+        {
+            "instance": "PART-1-1",
+            "mesh": "element",
+            "type": "number",
+            "id": [1, 2, 3],
+            "fields": [
+                "S",
+                "E",
+                "TEMP",
+                "SDV1",
+                "SDV20"
+            ]
+        }
+    ],
+    "nframes": null,
+    "export_prefix": "odbex"
+}
