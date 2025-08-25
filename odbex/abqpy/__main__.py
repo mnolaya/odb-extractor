@@ -1,5 +1,6 @@
 import os
 import sys
+import glob
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import argparse
 
@@ -19,8 +20,15 @@ def main():
     # Load configuration settings for the extraction
     odbex_cfg = _json.load_json_py2(args.cfg)
 
+    # Wildcard option
+    if '*' in args.odb:
+        odbs = list(glob.glob(args.odb))
+    else:
+        odbs = [args.odb]
+        
     # Call extractor
-    extractor.extract(args.odb, odbex_cfg)
+    for odb in odbs:
+        extractor.extract(odb, odbex_cfg)
     
 if __name__ == "__main__":
     main()
