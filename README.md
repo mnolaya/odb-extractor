@@ -27,13 +27,29 @@ To extract field data from an Abaqus ODB using this package, you will need to cr
 
 ## Extracting
 
+### Single ODB
+
 Once you have your extraction config file, running an extraction for a single ODB is simple.
 
 ```bash
 python -m odbex path_to_odb.odb path_to_config.json
 ```
 
-The extracted data will be output in `.json` file format with the same base name as the ODB with a prefix defined by the `export_prefix` key. 
+### Batch ODB
+
+You can also run a batch extraction of multiple ODBs using wildcard syntax (`*`). For example, to get all odbs from folder `some_folder`:
+
+```bash
+python -m odbex some_folder\*.odb path_to_config.json
+```
+
+Or, to get data from all ODBs that contain `55pct` in the file name from folder `some_folder`:
+
+```bash
+python -m odbex some_folder\*55pct*.odb path_to_config.json
+```
+
+In either case (single or batch mode), the extracted data will be output in `.json` file format with the same base name as the extracted ODB(s) and a prefix defined by the `export_prefix` key in the config file. 
 
 ## Data exploration
 
