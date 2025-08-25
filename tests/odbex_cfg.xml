@@ -1,9 +1,0 @@
-<odbex_config>
-    <!-- <file_explorer enable="true">
-        <ini_dir>.</ini_dir>
-    </file_explorer> -->
-    <odb_filepaths>
-        <file>some_file.odb</file>
-        <file>some_other_file.odb</file>
-    </odb_filepaths>
-</odbex_config>
