@@ -97,3 +97,8 @@ class SimulationData:
     # Return a RegionData object for the specified step and region.
     def get_region_data(self, step: str, region: str) -> RegionData:
         return self.step_data[step].region_data[region]
+    
+    # All available regions for each step
+    @property
+    def regions(self):
+        return {sd.step: [region for region in sd.region_data.keys()] for sd in self.step_data.values()}

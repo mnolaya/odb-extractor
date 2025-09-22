@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 
 import numpy as np
 
@@ -38,14 +39,34 @@ def extract(odb_filepath, odbex_cfg):
     # Write raw output data to file
     prefix = odbex_cfg['export_prefix']
     if prefix is None: prefix = 'odbex'
-    output_filename = '_'.join([prefix, os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
+    output_filename = '_'.join([prefix, os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.npz'
+    # output_filename = '_'.join([prefix, os.path.splitext(os.path.basename(odb_filepath))[0]]) + '.json'
     output_dir = os.path.join(os.path.dirname(odb_filepath))
     if output_dir == '': output_dir = '.'
     output_filepath = os.path.join(output_dir, output_filename)
     if not os.path.exists(output_dir): os.mkdir(output_dir)
-    with open(output_filepath, 'w+') as f:
-        json.dump(extracted_odb_data, f, indent=4)
-        print('requested field data from {} successfully written to file: {}'.format(odb_filepath, output_filepath))
+
+    # Flatten data dictionary for numpy save
+    flattened = {}
+    for step, step_data in extracted_odb_data.items():
+        for region, region_data in step_data['field_data'].items():
+            for field, field_data in region_data.items():
+                for data_id, data in field_data.items():
+                    # Concatenate keys to unique string for saving
+                    key = '|'.join([step, region, field, data_id])
+                    flattened.update({key: np.array(data)})
+        increments = sorted(step_data['increments'].keys())
+        time = [step_data['increments'][i] for i in increments]
+        key = '|'.join([step, 'increments'])
+        flattened.update({key: np.array([increments, time]).T})        
+    
+    # Write numpy to file.
+    np.savez(output_filepath, **flattened)
+
+    # with open(output_filepath, 'w+') as f:
+    #     json.dump(extracted_odb_data, f, indent=4)
+    
+    print('requested field data from {} successfully written to file: {}'.format(odb_filepath, output_filepath))
 
 def slice_frames_evenly(frames, num_frames=None):
     # type: (int, int | None) -> list[OdbFrame]
@@ -115,31 +136,52 @@ def get_instance_nodes_by_number(instance, numbers):
 
 def build_extraction_region_dict(odb, extraction_defintions):
     _region_getters = {
-        'element': {
-            'set': get_instance_element_set,
-            'number': get_instance_elements_by_number,
+        'instance': {
+            'element': {
+                'set': get_instance_element_set,
+                'number': get_instance_elements_by_number,
+            },
+            'node': {
+                'set': get_instance_node_set,
+                'number': get_instance_nodes_by_number,
+            },
         },
-        'node': {
-            'set': get_instance_node_set,
-            'number': get_instance_nodes_by_number,
-        },
+        'assembly': {
+            'element': {
+                'set': get_instance_element_set,
+                'number': get_instance_elements_by_number,
+            },
+            'node': {
+                'set': get_instance_node_set,
+                'number': get_instance_nodes_by_number,
+            },
+        },        
     }
     _mesh_number_prefix = {'element': 'E', 'node': 'N'}
     
     regions = {}
     for ed in extraction_defintions:
+        # Temp implementation for turning off averaging for a set
+        mean_on = True
+        if 'avg' in ed.keys() and ed['avg'] == False: mean_on = False
+
         rmesh, rtype, rid, fields = ed['mesh'].lower(), ed['type'].lower(), ed['id'], ed['fields']
+        if ed['subsection'] == 'assembly':
+            instance = odb.rootAssembly
+            subsection = 'assembly'
+        else:
+            try:
+                instance = odb.rootAssembly.instances[ed['subsection']]
+                subsection = 'instance'
+            except KeyError:
+                print('error: instance {} does not exist'.format(ed['subsection']))
+                print('the instances on the model which field data can be extracted from are:')
+                for inst in odb.rootAssembly.instances.keys():
+                    print('-> {}'.format(inst))
+                print('terminating...')
+                exit()
         try:
-            instance = odb.rootAssembly.instances[ed['instance']]
-        except KeyError:
-            print('error: instance {} does not exist'.format(ed['instance']))
-            print('the instances on the model which field data can be extracted from are:')
-            for inst in odb.rootAssembly.instances.keys():
-                print('-> {}'.format(inst))
-            print('terminating...')
-            exit()
-        try:
-            rg = _region_getters[rmesh][rtype]
+            rg = _region_getters[subsection][rmesh][rtype]
         except KeyError:
             print('incorrect value entry for region "type" ({}) or "get" ({})'.format(ed['type'], ed['get']))
             print('valid type values: node, element')
@@ -148,10 +190,11 @@ def build_extraction_region_dict(odb, extraction_defintions):
             exit()
         region = rg(instance, rid)
         if rtype == 'set':
-            regions.update({rid: {'region': region, 'fields': fields}})
+            regions.update({rid: {'region': region, 'fields': fields, 'mean_on': mean_on}})
         else:
             pfx = _mesh_number_prefix[rmesh]
-            regions.update({'{}{}'.format(pfx, mesh_item.label): {'region': mesh_item, 'fields': fields} for mesh_item in region})
+
+            regions.update({'{}{}'.format(pfx, mesh_item.label): {'region': mesh_item, 'fields': fields, 'mean_on': mean_on} for mesh_item in region})
     return regions
 
 def get_field_data(field_name, frame, region):
@@ -195,11 +238,13 @@ def average_field_data(field_data, ivols=None):
     
 def update_field_dict(field_dict, data_mean, data_std, components):
     # type: (dict, np.ndarray, list[str]) -> None
-    field_dict['data'].append(data_mean.tolist())
-    field_dict['std'].append(data_std.tolist())
+    field_dict['data'].append(data_mean)
+    field_dict['std'].append(data_std)
+    # field_dict['data'].append(data_mean.tolist())
+    # field_dict['std'].append(data_std.tolist())
     if 'components' not in field_dict.keys(): field_dict.update({'components': components})
 
-def extract_step(step, num_frames, extraction_regions):
+def extract_step(step, num_frames, extraction_regions, mean=True):
     # type: (Odb.Step, int, dict) -> dict
 
     # Get evenly spaced slice of frames
@@ -223,6 +268,7 @@ def extract_step(step, num_frames, extraction_regions):
             ivols = None
             if 'IVOL' in fdd.keys(): 
                 ivols, components = get_field_data('IVOL', frame, region)
+                if np.sum(ivols) == 0: continue
                 # update_field_dict(fdd['IVOL'], ivols, components)
                 # field_data_dicts[ed['id']]['IVOL']['data'].append(ivols)
             
@@ -236,10 +282,15 @@ def extract_step(step, num_frames, extraction_regions):
                 except KeyError as e:
                     print('warning: field {} not available for extraction in current ODB. continuing to next requested field or odb...'.format(field_name))
                     continue
+
                 fd_mean, fd_std = average_field_data(fd, ivols)
 
                 # Update the field dict
-                update_field_dict(field_dict, fd_mean, fd_std, components)
+                if extraction_regions[rid]['mean_on']:
+                    update_field_dict(field_dict, fd_mean, fd_std, components)
+                else:
+                    update_field_dict(field_dict, fd, fd_mean, components)
+
     return step_data
 
 if __name__ == '__main__':
