@@ -1,2 +1,2 @@
 # import extract
-# import extractor
+# from . import extractor
