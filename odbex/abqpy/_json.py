@@ -5,6 +5,7 @@ from: https://stackoverflow.com/a/33571117
 import json
 
 def load_json_py2(filepath):
+    # type: (str) -> dict
     with open(filepath, "r") as f:
         return _byteify(
             json.load(f, object_hook=_byteify),
