@@ -58,13 +58,23 @@ class FieldData:
 
     def arthimetic_average(self):
         # type: () -> None
-        self.avg = np.mean(self.data, axis=0)
-        self.std = np.std(self.data, axis=0)
+        # Compute average and standard deviation for each frame of data
+        avg, std = [], []
+        for i in range(self.data.shape[0]):
+            avg.append(np.mean(self.data[i], axis=0))
+            std.append(np.std(self.data[i], axis=0))
+        self.avg = np.array(avg)
+        self.std = np.array(std)
 
     def volume_average(self, ivols):
         # type: (np.ndarray) -> None
-        self.avg = np.sum(self.data*ivols, axis=0)/np.sum(ivols)
-        self.std = np.std(self.data*ivols, axis=0)
+        # Compute average and standard deviation for each frame of data
+        avg, std = [], []
+        for i in range(self.data.shape[0]):
+            avg.append(np.sum(self.data[i]*ivols, axis=0)/np.sum(ivols))
+            std.append(np.std(self.data[i]*ivols, axis=0))
+        self.avg = np.array(avg)
+        self.std = np.array(std)
 
     def axisymmetric_area_weight(self, node_coordinates, axis=0):
         # type: (list[np.ndarray], int) -> None
@@ -76,12 +86,18 @@ class FieldData:
             mid = 0.5*(x1 + x0)
             weights.append(2*pi*mid*dx)
         weights_arr = np.array(weights)
-        fd_ = []
-        for fd0, fd1 in zip(self.data[:-1, 0], self.data[1:, 0]):
-            fd_.append(0.5*(fd0 + fd1))
-        fd_arr = np.array(fd_)
-        self.avg = np.array([np.sum(fd_arr*weights_arr)/np.sum(weights_arr)])
-        self.std = np.std([fd_arr*weights_arr])
+
+        # Compute average and standard deviation for each frame of data
+        avg, std = [], []
+        for i in range(self.data.shape[0]):
+            fd_ = []
+            for fd0, fd1 in zip(self.data[i, :-1], self.data[i, 1:]):
+                fd_.append(0.5*(fd0 + fd1))
+            fd_arr = np.array(fd_)
+            avg.append(np.array([np.sum(fd_arr*weights_arr)/np.sum(weights_arr)]))
+            std.append([np.std([fd_arr*weights_arr])])
+        self.avg = np.array(avg)
+        self.std = np.array(std)
 
 class ExtractionDefinition:
 
@@ -250,7 +266,6 @@ class OutputWriter():
                 {
                     '|'.join([ed.id, 'components']): ed.components,
                     '|'.join([ed.id, "data"]): np.stack([ed.avg, ed.std])
-                    # '|'.join([ed.id, "data"]): np.stack([ed.avg, ed.std])
                 }
             )
 
@@ -258,59 +273,3 @@ class OutputWriter():
         output_fp = os.path.join(self.output_dir, self.output_name + ".npz")
         np.savez(output_fp, **data_asdict)
         print('wrote extracted data to file -> {}'.format(output_fp))
-            
-
-
-
-
-    # def get_field_data_invariant(self, field_name, invariant):
-    #     # type: (str, str) -> np.ndarray
-    #     # Get the field data for each frame on the current extraction region
-    #     fd = []
-    #     get_components = True
-    #     for frame in self.frames:
-    #         # Get all field output for current field and frame
-    #         field_data = frame.fieldOutputs[field_name]
-
-    #         # Get component labels for the field
-    #         if get_components: 
-    #             components = list(field_data.componentLabels)
-    #             if not components: components = [field_name]
-    #             get_components = False
-
-    #         # Use the bulkDataBlocks method to retrieve all field output data for the region
-    #         bdbs = field_data.getSubset(region=self.region).bulkDataBlocks
-            
-    #         # Stack data into numpy array
-    #         fd.append(np.vstack(bdb.data for bdb in bdbs))
-    #     return np.array(fd) 
-
-        #     # Get max. principal if stress or strain requested
-        #     if field_name in ['S', 'E', 'LE']:
-        #         bdbs = field_data.getSubset(region=self.region).getScalarField(invariant=abqconst.MAX_PRINCIPAL).bulkDataBlocks
-        #         data_arr = np.hstack([data_arr, np.vstack(bdb.data for bdb in bdbs)])
-        #         components += ("{}MAXPRINC".format(field_name), )
-        # # return data, components
-        # Get the specific requested region on the model component
-        
-
-    # def _get_instance_element_set_region(self, odb):
-    #     try:
-    #         instance = odb.rootAssembly.instances[self.model_component_name]
-    #     except KeyError:
-    #         terminate_instance_keyerror(self.model_component_name, odb.rootAssembly.instances)
-    #     return [instance.elementSets[group] for group in self.groups]
-
-
-    # def extract(self):
-        # ed = self.extraction_definitions[0]
-        # ed.get_extraction_region(self.odb)
-        
-        # print(ed.)
-
-        # for ed in self.extraction_definitions:
-            # print(ed.label)
-
-    # def    
-
-    
