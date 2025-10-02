@@ -1,9 +1,18 @@
+import os
+
 import numpy as np
+from math import pi
 
 import abaqusConstants as abqconst
 from odbAccess import openOdb
 
-# from abqpy import extract
+DEFAULT_CONFIG_SETTINGS = {
+    "extract": {
+        "average": "arthimetic"
+    },
+    "nframes": None,
+    "export_prefix": "odbex"
+}
 
 def terminate_instance_keyerror(instance_name, instances):
     # type: (str, dict) -> None
@@ -20,11 +29,11 @@ def terminate_region_keyerror(model_component_name, region_label):
     exit()
 
 def _slice_frames_evenly(frames, num_frames=None):
-    # type: (int, int | None) -> list[OdbFrame]
+    # type: (list[OdbFrame], int | None) -> list[OdbFrame]
     
     # Check if number of frames is provided or if it exceeds the number of available frames 
     total_frames = len(frames)
-    if num_frames >= total_frames or num_frames is None: return frames
+    if num_frames is None or num_frames >= total_frames: return frames
     
     # Create evenly spaced slice indices
     # Ensure that the last frame is always included
@@ -32,14 +41,57 @@ def _slice_frames_evenly(frames, num_frames=None):
     if indices[-1] != total_frames-1: indices.append(total_frames-1)
     return [frames[i] for i in indices]
 
+class FieldData:
+
+    def __init__(self, data, components, step_name, field_name, extraction_definition):
+        self.data = data
+        self.components = components
+        self.id = '|'.join([
+            step_name,
+            extraction_definition.model_component_name, 
+            extraction_definition.label,
+            extraction_definition.mesh_type,
+            field_name
+        ])
+        self.avg = None
+        self.std = None
+
+    def arthimetic_average(self):
+        # type: () -> None
+        self.avg = np.mean(self.data, axis=0)
+        self.std = np.std(self.data, axis=0)
+
+    def volume_average(self, ivols):
+        # type: (np.ndarray) -> None
+        self.avg = np.sum(self.data*ivols, axis=0)/np.sum(ivols)
+        self.std = np.std(self.data*ivols, axis=0)
+
+    def axisymmetric_area_weight(self, node_coordinates, axis=0):
+        # type: (list[np.ndarray], int) -> None
+        pos = [c[axis] for c in node_coordinates]
+        weights = []
+        # Compute weights for node pairs along surface
+        for x0, x1 in zip(pos[:-1], pos[1:]):
+            dx = abs(x1 - x0)
+            mid = 0.5*(x1 + x0)
+            weights.append(2*pi*mid*dx)
+        weights_arr = np.array(weights)
+        fd_ = []
+        for fd0, fd1 in zip(self.data[:-1, 0], self.data[1:, 0]):
+            fd_.append(0.5*(fd0 + fd1))
+        fd_arr = np.array(fd_)
+        self.avg = np.array([np.sum(fd_arr*weights_arr)/np.sum(weights_arr)])
+        self.std = np.std([fd_arr*weights_arr])
+
 class ExtractionDefinition:
 
-    def __init__(self, model_component_name, mesh_type, label, fields):
-        # type: (str, str, str, str | int, list[str]) -> None
+    def __init__(self, model_component_name, mesh_type, label, fields, average='arthimetic'):
+        # type: (str, str, str | int, list[str], str) -> None
         self.model_component_name = model_component_name
         self.mesh_type = mesh_type
         self.label = label
         self.fields = fields
+        self.average_mode = average
         # self.region = None
 
     def validate_region(self, model_component):
@@ -69,6 +121,10 @@ class OdbExtractor:
         self.step_name = ''
         self.frames = []
         self.region = None
+        self._curr_extraction_definition = None
+
+    def close_odb(self):
+        self.odb.close()
 
     def load_analysis_frames(self, step_name, num_frames=None):
         # type: (str, int | None) -> None
@@ -77,6 +133,9 @@ class OdbExtractor:
 
     def set_extraction_region(self, extraction_definition):
         # type: (ExtractionDefinition) -> None
+                
+        # Update the current extraction definition
+        self._curr_extraction_definition = extraction_definition
 
         # Get the requested assembly or instance
         ed = extraction_definition
@@ -104,32 +163,134 @@ class OdbExtractor:
         elif ed.mesh_type == 'node' and type(ed.label) == int:
             self.region = model_component.getNodeFromLabel(ed.label)
 
-    def get_field_data(self, field_name):
+    @staticmethod
+    def get_field_data_components(field_data):
+        components = list(field_data.componentLabels)
+        if not components: components = [field_data.name]
+        return components
+
+    @staticmethod
+    def get_invariants(field_data):
+        return field_data.validInvariants
+    
+    def get_valid_fields(self, region_name, frame_index):
+        # type: (str, int) -> list[str]
+        valid_fields = []
+        for field_name in self.frames[frame_index].fieldOutputs.keys():
+            if region_name in field_name: valid_fields.append(field_name)
+        return valid_fields
+
+    def get_region_field_data(self, field_name):
+        # type: (str) -> FieldData
+        
+        # Get component labels for the field
+        components = self.get_field_data_components(self.frames[0].fieldOutputs[field_name])
+
         # Get the field data for each frame on the current extraction region
         fd = []
-        get_components = True
         for frame in self.frames:
             # Get all field output for current field and frame
             field_data = frame.fieldOutputs[field_name]
-
-            # Get component labels for the field
-            if get_components: 
-                components = list(field_data.componentLabels)
-                if not components: components = [field_name]
-                get_components = False
 
             # Use the bulkDataBlocks method to retrieve all field output data for the region
             bdbs = field_data.getSubset(region=self.region).bulkDataBlocks
             
             # Stack data into numpy array
-            data_arr = np.vstack(bdb.data for bdb in bdbs)
+            fd.append(np.vstack(bdb.data for bdb in bdbs))
+        return FieldData(np.array(fd), components, self.step_name, field_name, self._curr_extraction_definition)
+    
+    def extract_odb_data(self):
+        extracted_data = []
+        for ed in self.extraction_definitions:
+            # Set the current region for field data extraction
+            self.set_extraction_region(ed)
+            
+            # Get integration point volumes for the region if volume-averaging mode set
+            if ed.average_mode == 'volume':
+                fd_ivol = self.get_region_field_data("IVOL")
 
-            # Get max. principal if stress or strain requested
-            if field_name in ['S', 'E', 'LE']:
-                bdbs = field_data.getSubset(region=self.region).getScalarField(invariant=abqconst.MAX_PRINCIPAL).bulkDataBlocks
-                data_arr = np.hstack([data_arr, np.vstack(bdb.data for bdb in bdbs)])
-                components += ("{}MAXPRINC".format(field_name), )
-        # return data, components
+            # Get all requested fields on the region
+            for field in ed.fields:
+                fd = self.get_region_field_data(field)
+
+                # Average the data for the region
+                if ed.average_mode == 'arthimetic':
+                    fd.arthimetic_average()
+                elif ed.average_mode == 'volume':
+                    fd.volume_average(fd_ivol)
+                elif ed.average_mode == 'area-weighted':
+                    coordinates = [node.coordinates for nodes in self.region.nodes for node in nodes]
+                    fd.axisymmetric_area_weight(coordinates)
+
+                extracted_data.append(fd)
+        return extracted_data
+    
+class OutputWriter():
+
+    def __init__(self, odb_extractor, extracted_data, output_dir=None, prefix="odbex"):
+        # type: (OdbExtractor, list[FieldData], str, str) -> None
+        self.odb_name = os.path.splitext(os.path.basename(odb_extractor.odb.name))[0]
+        self.extracted_data = extracted_data
+        if output_dir is None:
+            self.output_dir = os.path.dirname(odb_extractor.odb.name)
+        else:
+            self.output_dir = output_dir
+        self.prefix = prefix
+        self.set_output_name()
+
+    def set_output_name(self):
+        self.output_name = "_".join([self.prefix, self.odb_name])
+
+    def write_npz(self):
+        # type: () -> None
+        # Create a dictionary of the data to be written to file
+        data_asdict = {}
+        for ed in self.extracted_data:
+            data_asdict.update(
+                {
+                    '|'.join([ed.id, 'components']): ed.components,
+                    '|'.join([ed.id, "data"]): np.stack([ed.avg, ed.std])
+                    # '|'.join([ed.id, "data"]): np.stack([ed.avg, ed.std])
+                }
+            )
+
+        # Create output filepath and save as npz file
+        output_fp = os.path.join(self.output_dir, self.output_name + ".npz")
+        np.savez(output_fp, **data_asdict)
+        print('wrote extracted data to file -> {}'.format(output_fp))
+            
+
+
+
+
+    # def get_field_data_invariant(self, field_name, invariant):
+    #     # type: (str, str) -> np.ndarray
+    #     # Get the field data for each frame on the current extraction region
+    #     fd = []
+    #     get_components = True
+    #     for frame in self.frames:
+    #         # Get all field output for current field and frame
+    #         field_data = frame.fieldOutputs[field_name]
+
+    #         # Get component labels for the field
+    #         if get_components: 
+    #             components = list(field_data.componentLabels)
+    #             if not components: components = [field_name]
+    #             get_components = False
+
+    #         # Use the bulkDataBlocks method to retrieve all field output data for the region
+    #         bdbs = field_data.getSubset(region=self.region).bulkDataBlocks
+            
+    #         # Stack data into numpy array
+    #         fd.append(np.vstack(bdb.data for bdb in bdbs))
+    #     return np.array(fd) 
+
+        #     # Get max. principal if stress or strain requested
+        #     if field_name in ['S', 'E', 'LE']:
+        #         bdbs = field_data.getSubset(region=self.region).getScalarField(invariant=abqconst.MAX_PRINCIPAL).bulkDataBlocks
+        #         data_arr = np.hstack([data_arr, np.vstack(bdb.data for bdb in bdbs)])
+        #         components += ("{}MAXPRINC".format(field_name), )
+        # # return data, components
         # Get the specific requested region on the model component
         
 
