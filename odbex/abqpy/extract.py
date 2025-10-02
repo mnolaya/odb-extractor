@@ -34,6 +34,7 @@ if __name__ == "__main__":
     # Load desired step frames to extract from
     extractor.load_analysis_frames("Step-1")
     
-    extractor.get_extraction_region(extractor.extraction_definitions[0])
-    # 
+    # Set the current region for field data extraction
+    extractor.set_extraction_region(extractor.extraction_definitions[0])
     
+    # 

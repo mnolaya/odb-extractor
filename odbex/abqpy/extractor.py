@@ -1,5 +1,6 @@
 import numpy as np
 
+import abaqusConstants as abqconst
 from odbAccess import openOdb
 
 # from abqpy import extract
@@ -103,8 +104,32 @@ class OdbExtractor:
         elif ed.mesh_type == 'node' and type(ed.label) == int:
             self.region = model_component.getNodeFromLabel(ed.label)
 
-    def get_field_data():
-        pass
+    def get_field_data(self, field_name):
+        # Get the field data for each frame on the current extraction region
+        fd = []
+        get_components = True
+        for frame in self.frames:
+            # Get all field output for current field and frame
+            field_data = frame.fieldOutputs[field_name]
+
+            # Get component labels for the field
+            if get_components: 
+                components = list(field_data.componentLabels)
+                if not components: components = [field_name]
+                get_components = False
+
+            # Use the bulkDataBlocks method to retrieve all field output data for the region
+            bdbs = field_data.getSubset(region=self.region).bulkDataBlocks
+            
+            # Stack data into numpy array
+            data_arr = np.vstack(bdb.data for bdb in bdbs)
+
+            # Get max. principal if stress or strain requested
+            if field_name in ['S', 'E', 'LE']:
+                bdbs = field_data.getSubset(region=self.region).getScalarField(invariant=abqconst.MAX_PRINCIPAL).bulkDataBlocks
+                data_arr = np.hstack([data_arr, np.vstack(bdb.data for bdb in bdbs)])
+                components += ("{}MAXPRINC".format(field_name), )
+        # return data, components
         # Get the specific requested region on the model component
         
 
