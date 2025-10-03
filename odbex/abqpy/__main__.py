@@ -35,6 +35,7 @@ def main():
         if output_dir is None: output_dir = os.path.dirname(odb)
 
         # Run extractor
+        print('extracting from -> {}...'.format(odb))
         extract.extract_from_odb(odb, args.cfg, args.mode, output_dir)
     
 if __name__ == "__main__":
