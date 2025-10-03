@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "odbex"
+description = "A package for extracting data from Abaqus .odb files."
+readme = "README.md"
+version = "4.0.0"
+dependencies = ['numpy', 'attrs']
+requires-python = ">= 3.10"
+authors = [
+    { name = "Michael N. Olaya, Ph.D.", email = "michael_olaya@uml.edu" },
+]
+license = "MIT"
