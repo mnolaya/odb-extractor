@@ -9,8 +9,8 @@ def _argparse() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="odbex")
     parser.add_argument('odb', help='Full or relative path to output database (.odb) file.')
     parser.add_argument('cfg', help='Full or relative path to odbex configuration (odbex_cfg.json) file.')
-    parser.add_argument('mode', nargs="?", help='Output data write mode. Options are: numpy', default='numpy')
-    parser.add_argument('output_dir', nargs="?", help='Directory to write output to. Defaults to the same directory as the odb that was extracted from.', default=None)
+    parser.add_argument('--mode', help='Output data write mode. Options are: numpy', default='numpy')
+    parser.add_argument('--output_dir', help='Directory to write output to. Defaults to the same directory as the odb that was extracted from.', default=None)
     return parser.parse_args()
 
 def main() -> None:
