@@ -1,10 +1,13 @@
 import os
+import copy
 
 import numpy as np
 from math import pi
 
 import abaqusConstants as abqconst
 from odbAccess import openOdb
+
+from ._json import load_json_py2
 
 DEFAULT_CONFIG_SETTINGS = {
     "extract": {
@@ -273,3 +276,45 @@ class OutputWriter():
         output_fp = os.path.join(self.output_dir, self.output_name + ".npz")
         np.savez(output_fp, **data_asdict)
         print('wrote extracted data to file -> {}'.format(output_fp))
+
+def build_extraction_regions(extractor_config):
+    # type: (dict) -> list[ExtractionDefinition]
+    extraction_definitions = []
+    for e in extractor_config["extract"]:
+        # Copy over the default settings and update with the user settings
+        settings = copy.deepcopy(DEFAULT_CONFIG_SETTINGS["extract"])
+        settings.update(**e)
+
+        extraction_definitions.append(ExtractionDefinition(
+            e["component"],
+            e["mesh_type"],
+            e["label"],
+            e["fields"],
+            e["average"],
+        ))
+    return extraction_definitions
+
+def extract_from_odb(odb_fp, odbex_cfg_fp, write_mode='numpy', output_dir=None):
+    # type: (str, str, str) -> None
+    # Prepare OdbExtractor for extraction
+    odbex_cfg = load_json_py2(odbex_cfg_fp)
+    extraction_definitions = build_extraction_regions(odbex_cfg)
+    odbex = OdbExtractor(odb_fp, extraction_definitions)
+
+    # Extract data from the odb
+    try:
+        step_names = odbex_cfg["steps"]
+    except KeyError:
+        step_names = odbex.odb.steps.keys()
+    extracted_data = []
+    for step_name in step_names:
+        odbex.load_analysis_frames(step_name)
+        extracted_data += odbex.extract_odb_data()
+
+    # Create writer and write to requested filetype
+    writer = OutputWriter(odbex, extracted_data, output_dir)
+    if write_mode == 'numpy':
+        writer.write_npz()
+    
+    # Close odb
+    odbex.close_odb()
