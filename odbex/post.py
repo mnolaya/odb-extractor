@@ -1,7 +1,7 @@
 import pathlib
 # import orjson
 
-from attrs import define, field, evolve
+import attrs
 import numpy as np
 
 # @define
@@ -103,24 +103,34 @@ import numpy as np
 #     def regions(self):
 #         return {sd.step: [region for region in sd.region_data.keys()] for sd in self.step_data.values()}
     
-@define
+@attrs.define
 class OdbexData:
 
     filepath: pathlib.Path
-    steps: list[str] = field(init=False)
-    regions: list[str] = field(init=False)
-    fields: dict[str, list[str]] = field(init=False)
-    data: np.ndarray = field(init=False)
-    region: str = field(init=False)
-    mesh_type: str = field(init=False)
-    step: str = field(init=False)
-    field: str = field(init=False)
+    steps: list[str] = attrs.field(init=False)
+    regions: list[str] = attrs.field(init=False)
+    fields: dict[str, list[str]] = attrs.field(init=False)
+    data: dict[str, np.ndarray] = attrs.field(init=False, repr=False)
+    region: str = attrs.field(init=False)
+    mesh_type: str = attrs.field(init=False)
+    step: str = attrs.field(init=False)
+    field: str = attrs.field(init=False)
+    _data_key: str = attrs.field(init=False)
 
     def __attrs_post_init__(self):
         self._load_npz()
         self._get_step_names()
         self._get_regions()
         self._get_field_names()
+
+    def _set_data_key(self):
+        self._data_key = "|".join([self.step, self.region, self.mesh_type, self.field])
+
+    def get_field_data(self, field: str | None = None) -> tuple[np.ndarray, list[str]]:
+        if type(field) == str:
+            self.set_field(field)
+        self._set_data_key()
+        return self.data["|".join([self._data_key, 'data'])], self.data["|".join([self._data_key, 'components'])]
 
     def set_region(self, region: str, mesh_type: str):
         self.region = region
@@ -138,7 +148,9 @@ class OdbexData:
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', message="Reading `.npy` or `.npz` file required additional header parsing", category=UserWarning)
             np.savez(self.filepath, **data)
-        self.data = np.load(self.filepath)
+        data.close()
+        with np.load(self.filepath, mmap_mode='r') as data:
+            self.data = {k: arr.copy() for k, arr in data.items()}
 
     def _get_step_names(self):
         self.steps = []
