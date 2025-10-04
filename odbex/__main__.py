@@ -15,7 +15,23 @@ def _argparse() -> argparse.Namespace:
 
 def main() -> None:
     args = _argparse()
-    subprocess.run(['abaqus', 'python', 'abqpy/__main__.py', args.odb, args.cfg, args.mode, str(args.output_dir)], check=True, shell=True, cwd=PARENT)
+    if args.output_dir is not None:
+        output_dir = pathlib.Path(args.output_dir).absolute()
+    else:
+        output_dir = "None"
+    subprocess.run([
+        'abaqus',
+        'python',
+        'abqpy/__main__.py',
+        pathlib.Path(args.odb).absolute(),
+        pathlib.Path(args.cfg).absolute(),
+        args.mode,
+        output_dir
+    ],
+    check=True,
+    shell=True,
+    cwd=PARENT
+    )
 
 if __name__ == "__main__":
     main()
