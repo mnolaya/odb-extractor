@@ -83,11 +83,12 @@ class FieldData:
         # type: (list[np.ndarray], int) -> None
         pos = [c[axis] for c in node_coordinates]
         weights = []
+
         # Compute weights for node pairs along surface
         for x0, x1 in zip(pos[:-1], pos[1:]):
             dx = abs(x1 - x0)
             mid = 0.5*(x1 + x0)
-            weights.append(2*pi*mid*dx)
+            weights.append([2*pi*mid*dx])
         weights_arr = np.array(weights)
 
         # Compute average and standard deviation for each frame of data
