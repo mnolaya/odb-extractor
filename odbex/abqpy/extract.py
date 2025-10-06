@@ -241,6 +241,9 @@ class OdbExtractor:
                 elif ed.average_mode == 'area-weighted':
                     coordinates = [node.coordinates for nodes in self.region.nodes for node in nodes]
                     fd.axisymmetric_area_weight(coordinates)
+                elif ed.average_mode == 'none':
+                    fd.avg = fd.data
+                    fd.std = np.zeros(shape=fd.avg.shape)
 
                 extracted_data.append(fd)
         return extracted_data
