@@ -131,6 +131,11 @@ class OdbexData:
             self.set_field(field)
         self._set_data_key()
         return self.data["|".join([self._data_key, 'data'])], self.data["|".join([self._data_key, 'components'])]
+    
+    def get_step_increments(self, step: str | None = None):
+        step_ = self.step
+        if step is not None: step_ = step
+        return self.data["|".join([step_, "increments"])]
 
     def set_region(self, region: str, mesh_type: str):
         self.region = region
@@ -169,6 +174,7 @@ class OdbexData:
     def _get_field_names(self):
         self.fields = {}
         for key in self.data.keys():
+            if "increments" in key: continue
             key_components = key.split('|')
             region = '|'.join(key_components[1:4])
             field = key_components[4]

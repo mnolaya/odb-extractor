@@ -219,7 +219,12 @@ class OdbExtractor:
             fd.append(np.vstack(bdb.data for bdb in bdbs))
         return FieldData(np.array(fd), components, self.step_name, field_name, self._curr_extraction_definition)
     
+    def get_step_frame_increment_time(self):
+        # type: () -> dict[int, float]
+        return {frame.incrementNumber: frame.frameValue for frame in self.frames}
+    
     def extract_odb_data(self):
+        # type: () -> list[FieldData]
         extracted_data = []
         for ed in self.extraction_definitions:
             # Set the current region for field data extraction
@@ -250,10 +255,11 @@ class OdbExtractor:
     
 class OutputWriter():
 
-    def __init__(self, odb_extractor, extracted_data, output_dir=None, prefix="odbex"):
-        # type: (OdbExtractor, list[FieldData], str, str) -> None
+    def __init__(self, odb_extractor, extracted_data, frame_increments, output_dir=None, prefix="odbex"):
+        # type: (OdbExtractor, list[FieldData], dict[dict], str, str) -> None
         self.odb_name = os.path.splitext(os.path.basename(odb_extractor.odb.name))[0]
         self.extracted_data = extracted_data
+        self.frame_increments = frame_increments
         if output_dir is None:
             self.output_dir = os.path.dirname(odb_extractor.odb.name)
         else:
@@ -275,7 +281,10 @@ class OutputWriter():
                     '|'.join([ed.id, "data"]): np.stack([ed.avg, ed.std])
                 }
             )
-
+        # Add the step frame increments
+        for step_name, frames in self.frame_increments.items():
+            data_asdict.update({'|'.join([step_name, 'increments']): np.array([[i, t] for i, t in frames.items()])})
+            
         # Create output filepath and save as npz file
         output_fp = os.path.join(self.output_dir, self.output_name + ".npz")
         np.savez(output_fp, **data_asdict)
@@ -311,12 +320,14 @@ def extract_from_odb(odb_fp, odbex_cfg_fp, write_mode='numpy', output_dir=None):
     except KeyError:
         step_names = odbex.odb.steps.keys()
     extracted_data = []
+    frame_increments = {}
     for step_name in step_names:
         odbex.load_analysis_frames(step_name)
+        frame_increments.update({step_name: odbex.get_step_frame_increment_time()})
         extracted_data += odbex.extract_odb_data()
 
     # Create writer and write to requested filetype
-    writer = OutputWriter(odbex, extracted_data, output_dir)
+    writer = OutputWriter(odbex, extracted_data, frame_increments, output_dir)
     if write_mode == 'numpy':
         writer.write_npz()
     
