@@ -250,7 +250,7 @@ class OdbExtractor:
                 if ed.average_mode == 'arthimetic':
                     fd.arthimetic_average()
                 elif ed.average_mode == 'volume':
-                    fd.volume_average(fd_ivol)
+                    fd.volume_average(fd_ivol.data[0])
                 elif ed.average_mode == 'area-weighted':
                     coordinates = [node.coordinates for nodes in self.region.nodes for node in nodes]
                     fd.axisymmetric_area_weight(coordinates)
