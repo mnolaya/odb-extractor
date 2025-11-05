@@ -23,12 +23,15 @@ def terminate_instance_keyerror(instance_name, instances):
     print('the instances on the model which field data can be extracted from are:')
     for inst in instances.keys():
         print('-> {}'.format(inst))
-    print('terminating...')
+    print('**terminating...')
     exit()
 
-def terminate_region_keyerror(model_component_name, region_label):
+def terminate_region_keyerror(model_component_name, region_label, valid_regions):
     print('error: {} does not exist on {}'.format(region_label, model_component_name))
-    print('terminating...')
+    print('valid regions for extraction on this model component are:')
+    for vr in valid_regions:
+        print(vr)
+    print('**terminating...')
     exit()
 
 def _slice_frames_evenly(frames, num_frames=None):
@@ -117,20 +120,24 @@ class ExtractionDefinition:
     def validate_region(self, model_component):
         valid = True
         if self.mesh_type == 'element' and type(self.label) == str:
-            if self.label not in model_component.elementSets.keys(): valid = False
+            valid_keys = model_component.elementSets.keys()
+            if self.label not in valid_keys: valid = False
         elif self.mesh_type == 'element' and type(self.label) == int:
+            alid_keys = ["check available model element labels"]
             try:
                 model_component.getElementFromLabel(self.label)
             except:
                 valid = False
         elif self.mesh_type == 'node' and type(self.label) == str:
-            if self.label not in model_component.nodeSets.keys(): valid = False
+            valid_keys = model_component.nodeSets.keys()
+            if self.label not in valid_keys: valid = False
         elif self.mesh_type == 'node' and type(self.label) == int:
+            valid_keys = ["check available model node labels"]
             try:
                 model_component.getNodeFromLabel(self.label)
             except:
                 valid = False
-        return valid
+        return valid, valid_keys
 
 class OdbExtractor:
 
@@ -168,10 +175,11 @@ class OdbExtractor:
                 terminate_instance_keyerror(ed.model_component_name, self.odb.rootAssembly.instances)
         
         # Terminate if the requested region is not valid
-        if not ed.validate_region(model_component):
+        is_valid, valid_regions = ed.validate_region(model_component)
+        if not is_valid:
             label_ = ed.label
             if type(ed.label) == int: label_ = ed.mesh_type[0].upper() + str(ed.label)
-            terminate_region_keyerror(ed.model_component_name, label_)
+            terminate_region_keyerror(ed.model_component_name, label_, valid_regions)
 
         # Get the region from the odb
         if ed.mesh_type == 'element' and type(ed.label) == str:
