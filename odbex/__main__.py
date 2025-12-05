@@ -1,6 +1,7 @@
 import argparse
 import pathlib
 import subprocess
+import sys
 
 PARENT = pathlib.Path(__file__).parent
 EXTRACTOR = PARENT.joinpath('abqpy/__main__.py')
@@ -19,19 +20,34 @@ def main() -> None:
         output_dir = pathlib.Path(args.output_dir).absolute()
     else:
         output_dir = "None"
-    subprocess.run([
-        'abaqus',
-        'python',
-        'abqpy/__main__.py',
-        pathlib.Path(args.odb).absolute(),
-        pathlib.Path(args.cfg).absolute(),
-        args.mode,
-        output_dir
-    ],
-    check=True,
-    shell=True,
-    cwd=PARENT
-    )
+    if "windows" in sys.platform.lower():
+        subprocess.run([
+            'abaqus',
+            'python',
+            'abqpy/__main__.py',
+            pathlib.Path(args.odb).absolute(),
+            pathlib.Path(args.cfg).absolute(),
+            args.mode,
+            output_dir
+        ],
+        check=True,
+        shell=True,
+        cwd=PARENT
+        )
+    else:
+        subprocess.run([
+            'abq2023',
+            'python',
+            'abqpy/__main__.py',
+            pathlib.Path(args.odb).absolute(),
+            pathlib.Path(args.cfg).absolute(),
+            args.mode,
+            output_dir
+        ],
+        check=True,
+        cwd=PARENT
+        )
+
 
 if __name__ == "__main__":
     main()
