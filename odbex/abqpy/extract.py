@@ -1,5 +1,6 @@
 import os
 import copy
+import itertools
 
 import numpy as np
 from math import pi
@@ -101,8 +102,8 @@ class FieldData:
             for fd0, fd1 in zip(self.data[i, :-1], self.data[i, 1:]):
                 fd_.append(0.5*(fd0 + fd1))
             fd_arr = np.array(fd_)
-            avg.append(np.array([np.sum(fd_arr*weights_arr)/np.sum(weights_arr)]))
-            std.append([np.std([fd_arr*weights_arr])])
+            avg.append(np.array([np.sum(fd_arr*weights_arr, axis=0)/np.sum(weights_arr)]))
+            std.append([np.std(fd_arr*weights_arr, axis=0)])
         self.avg = np.array(avg)
         self.std = np.array(std)
 
@@ -241,10 +242,16 @@ class OdbExtractor:
             # Get integration point volumes for the region if volume-averaging mode set
             if ed.average_mode == 'volume':
                 fd_ivol = self.get_region_field_data("IVOL")
+            if ed.average_mode == 'area-weighted':
+                fd_coords = self.get_region_field_data("COORD")
 
             # Get all requested fields on the region
             for field in ed.fields:
-                fd = self.get_region_field_data(field)
+                try:
+                    fd = self.get_region_field_data(field)
+                except KeyError as e:
+                    print("warning: {} not found in current step: {}".format(field, self.step_name))
+                    continue
 
                 # Average the data for the region
                 if ed.average_mode == 'arthimetic':
@@ -252,8 +259,14 @@ class OdbExtractor:
                 elif ed.average_mode == 'volume':
                     fd.volume_average(fd_ivol.data[0])
                 elif ed.average_mode == 'area-weighted':
-                    coordinates = [node.coordinates for nodes in self.region.nodes for node in nodes]
-                    fd.axisymmetric_area_weight(coordinates)
+                    if ed.mesh_type == 'node':
+                        try:
+                            coordinates = [node.coordinates for nodes in self.region.nodes for node in nodes]
+                        except TypeError:
+                            coordinates = [node.coordinates for node in self.region.nodes]
+                    else:
+                        pass
+                    fd.axisymmetric_area_weight(fd_coords.data[0])
                 elif ed.average_mode == 'none':
                     fd.avg = fd.data
                     fd.std = np.zeros(shape=fd.avg.shape)
